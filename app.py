@@ -18,6 +18,7 @@ from src.database.db import (
     get_session_messages,
     rename_session,
 )
+from src.generation.generator import generate_answer, build_chat_history
 
 load_dotenv()
 
@@ -143,18 +144,29 @@ else:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    # get chat history before current question
-                    from src.generation.generator import build_chat_history
                     all_messages = get_session_messages(
                         st.session_state.current_session_id
                     )
-                    # exclude the message we just saved
                     previous_messages = all_messages[:-1]
                     chat_history = build_chat_history(previous_messages)
 
                     chunks = retrieve_chunks(question)
                     answer = generate_answer(question, chunks, chat_history)
+                    
+                    # display answer
                     st.markdown(answer)
+
+                    # display source chunks
+                    with st.expander("📄 View Sources"):
+                        for i, chunk in enumerate(chunks):
+                            st.markdown(f"**Source {i+1}**")
+                            st.caption(
+                                f"📁 {chunk.metadata.get('source', 'Unknown')} "
+                                f"| Page {chunk.metadata.get('page', '?') + 1}"
+                            )
+                            st.info(chunk.page_content[:300] + "...")
+                            st.divider()
+
                     save_message(
                         st.session_state.current_session_id,
                         "assistant",
