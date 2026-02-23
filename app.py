@@ -18,6 +18,8 @@ from src.database.db import (
     get_session_messages,
     rename_session,
 )
+from src.retrieval.hybrid_search import hybrid_search
+from src.ingestion.vector_store import load_chunks
 
 load_dotenv()
 
@@ -148,7 +150,8 @@ else:
                 previous_messages = all_messages[:-1]
                 chat_history = build_chat_history(previous_messages)
 
-                chunks = retrieve_chunks(question)
+                all_chunks = load_chunks()
+                chunks = hybrid_search(question, all_chunks)
 
                 # stream the response
                 answer = st.write_stream(
