@@ -17,3 +17,7 @@ CHUNK_OVERLAP = 50
 # Retrieval
 TOP_K_RESULTS = 3
 FAISS_DB_PATH = "faiss_db"
+
+# Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
