@@ -65,7 +65,7 @@ with st.sidebar:
 
     # upload document
     st.subheader("📁 Upload Document")
-    uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+    uploaded_file = st.file_uploader("Upload a PDF", type="pdf", max_upload_size=10)  # limit to 10MB
 
     if st.session_state.current_document:
         st.caption(f"📄 Active document: {st.session_state.current_document}")
