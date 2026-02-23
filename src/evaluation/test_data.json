@@ -1,0 +1,22 @@
+[
+    {
+        "question": "What is the net salary?",
+        "ground_truth": "The net salary is 492.61 EUR"
+    },
+    {
+        "question": "What is the hourly rate?",
+        "ground_truth": "The hourly rate is 48.22 EUR"
+    },
+    {
+        "question": "What is the employment tax deduction?",
+        "ground_truth": "The employment tax deduction is 68.08 EUR"
+    },
+    {
+        "question": "What is the pension insurance deduction?",
+        "ground_truth": "The pension insurance deduction is 57.49 EUR"
+    },
+    {
+        "question": "What is the gross remuneration?",
+        "ground_truth": "The gross remuneration is 618.18 EUR"
+    }
+]
