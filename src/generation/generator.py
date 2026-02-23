@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -59,20 +60,18 @@ def build_chat_history(messages: list) -> list:
     return history
 
 
-def generate_answer(question: str, chunks: list, chat_history: list = []):
-    """Generate answer from question, retrieved chunks and chat history"""
-    logger.info(f"Generating answer for question: '{question}'")
+def generate_answer_stream(question: str, chunks: list, chat_history: list = []):
+    """Stream answer token by token"""
+    logger.info(f"Streaming answer for question: '{question}'")
 
     try:
         if not chunks:
             logger.warning("No chunks provided — cannot generate answer")
-            return "I don't know"
+            yield "I don't know"
+            return
 
         llm = get_llm()
         context = "\n\n".join([chunk.page_content for chunk in chunks])
-
-        logger.debug(f"Context length: {len(context)} characters")
-        logger.debug(f"Chat history length: {len(chat_history)} messages")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", PROMPT_TEMPLATE),
@@ -81,15 +80,15 @@ def generate_answer(question: str, chunks: list, chat_history: list = []):
         ])
 
         chain = prompt | llm
-        response = chain.invoke({
+        
+        for chunk in chain.stream({
             "context": context,
             "chat_history": chat_history,
             "question": question,
-        })
-
-        logger.info("Answer generated successfully")
-        return response.content
+        }):
+            yield chunk.content
+            time.sleep(0.02) # small delay to simulate streaming
 
     except Exception as e:
-        logger.error(f"Failed to generate answer: {e}")
+        logger.error(f"Failed to stream answer: {e}")
         raise

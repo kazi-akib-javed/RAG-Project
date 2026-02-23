@@ -9,7 +9,7 @@ from src.ingestion.document_loader import load_pdf, load_all_pdfs
 from src.ingestion.text_splitter import split_documents
 from src.ingestion.vector_store import create_vector_store
 from src.retrieval.retriever import retrieve_chunks
-from src.generation.generator import generate_answer
+from src.generation.generator import build_chat_history, generate_answer_stream
 from src.database.db import (
     create_session,
     get_all_sessions,
@@ -18,7 +18,6 @@ from src.database.db import (
     get_session_messages,
     rename_session,
 )
-from src.generation.generator import generate_answer, build_chat_history
 
 load_dotenv()
 
@@ -142,39 +141,40 @@ else:
 
         # generate and save answer
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    all_messages = get_session_messages(
-                        st.session_state.current_session_id
-                    )
-                    previous_messages = all_messages[:-1]
-                    chat_history = build_chat_history(previous_messages)
+            try:
+                all_messages = get_session_messages(
+                    st.session_state.current_session_id
+                )
+                previous_messages = all_messages[:-1]
+                chat_history = build_chat_history(previous_messages)
 
-                    chunks = retrieve_chunks(question)
-                    answer = generate_answer(question, chunks, chat_history)
-                    
-                    # display answer
-                    st.markdown(answer)
+                chunks = retrieve_chunks(question)
 
-                    # display source chunks
-                    with st.expander("📄 View Sources"):
-                        for i, chunk in enumerate(chunks):
-                            st.markdown(f"**Source {i+1}**")
-                            st.caption(
-                                f"📁 {chunk.metadata.get('source', 'Unknown')} "
-                                f"| Page {chunk.metadata.get('page', '?') + 1}"
-                            )
-                            st.info(chunk.page_content[:300] + "...")
-                            st.divider()
+                # stream the response
+                answer = st.write_stream(
+                    generate_answer_stream(question, chunks, chat_history)
+                )
 
-                    save_message(
-                        st.session_state.current_session_id,
-                        "assistant",
-                        answer,
-                    )
-                    logger.info("Answer saved to database")
+                # display source chunks
+                with st.expander("📄 View Sources"):
+                    for i, chunk in enumerate(chunks):
+                        st.markdown(f"**Source {i+1}**")
+                        st.caption(
+                            f"📁 {chunk.metadata.get('source', 'Unknown')} "
+                            f"| Page {chunk.metadata.get('page', '?') + 1}"
+                        )
+                        st.info(chunk.page_content[:300] + "...")
+                        st.divider()
 
-                except Exception as e:
-                    st.error("Something went wrong. Please try again.")
-                    logger.error(f"Error generating answer: {e}")
+                # save complete answer after streaming
+                save_message(
+                    st.session_state.current_session_id,
+                    "assistant",
+                    answer,
+                )
+                logger.info("Streamed answer saved to database")
+
+            except Exception as e:
+                st.error("Something went wrong. Please try again.")
+                logger.error(f"Error streaming answer: {e}")
         st.rerun()
