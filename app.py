@@ -17,6 +17,7 @@ from src.database.db import (
     save_message,
     get_session_messages,
     rename_session,
+    update_session_document,
 )
 from src.retrieval.hybrid_search import hybrid_search
 from src.ingestion.vector_store import load_chunks
@@ -45,6 +46,8 @@ if "current_session_id" not in st.session_state:
 if "current_session_name" not in st.session_state:
     st.session_state.current_session_name = None
 
+if "current_document" not in st.session_state:
+    st.session_state.current_document = None
 
 # ── Sidebar ────────────────────────────────────────────────────────
 with st.sidebar:
@@ -62,7 +65,12 @@ with st.sidebar:
 
     # upload document
     st.subheader("📁 Upload Document")
-    uploaded_file = st.file_uploader("Upload a PDF", type="pdf", accept_multiple_files=False, max_upload_size=10)
+    uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+
+    if st.session_state.current_document:
+        st.caption(f"📄 Active document: {st.session_state.current_document}")
+    else:
+        st.warning("⚠️ No document loaded for this chat")
 
     if uploaded_file is not None:
         with st.spinner("Processing document..."):
@@ -77,6 +85,16 @@ with st.sidebar:
             pages = load_pdf(save_path)
             chunks = split_documents(pages)
             create_vector_store(chunks)
+
+            # save uploaded filename to session state
+            st.session_state.current_document = uploaded_file.name
+
+            # update session document if session exists
+            if st.session_state.current_session_id:
+                update_session_document(
+                    st.session_state.current_session_id,
+                    uploaded_file.name
+                )
 
         st.success(f"✅ {uploaded_file.name} ready!")
         logger.info(f"Document uploaded: {uploaded_file.name}")
@@ -98,6 +116,7 @@ with st.sidebar:
             ):
                 st.session_state.current_session_id = session["id"]
                 st.session_state.current_session_name = session["name"]
+                st.session_state.current_document = session.get("document_name")
                 st.rerun()
 
         with col2:
@@ -106,6 +125,7 @@ with st.sidebar:
                 if st.session_state.current_session_id == session["id"]:
                     st.session_state.current_session_id = None
                     st.session_state.current_session_name = None
+                    st.session_state.current_document = None
                 st.rerun()
 
 
@@ -150,34 +170,39 @@ else:
                 previous_messages = all_messages[:-1]
                 chat_history = build_chat_history(previous_messages)
 
-                all_chunks = load_chunks()
-                chunks = hybrid_search(question, all_chunks)
+                # check if document exists
+                if not st.session_state.current_document:
+                    st.warning("Please upload a document first!")
+                else:
+                    all_chunks = load_chunks()
+                    chunks = hybrid_search(question, all_chunks)
 
-                # stream the response
-                answer = st.write_stream(
-                    generate_answer_stream(question, chunks, chat_history)
-                )
+                    # stream the response
+                    answer = st.write_stream(
+                        generate_answer_stream(question, chunks, chat_history)
+                    )
 
-                # display source chunks
-                with st.expander("📄 View Sources"):
-                    for i, chunk in enumerate(chunks):
-                        st.markdown(f"**Source {i+1}**")
-                        st.caption(
-                            f"📁 {chunk.metadata.get('source', 'Unknown')} "
-                            f"| Page {chunk.metadata.get('page', '?') + 1}"
-                        )
-                        st.info(chunk.page_content[:300] + "...")
-                        st.divider()
+                    # display source chunks
+                    with st.expander("📄 View Sources"):
+                        for i, chunk in enumerate(chunks):
+                            st.markdown(f"**Source {i+1}**")
+                            st.caption(
+                                f"📁 {chunk.metadata.get('source', 'Unknown')} "
+                                f"| Page {chunk.metadata.get('page', '?') + 1}"
+                            )
+                            st.info(chunk.page_content[:300] + "...")
+                            st.divider()
 
-                # save complete answer after streaming
-                save_message(
-                    st.session_state.current_session_id,
-                    "assistant",
-                    answer,
-                )
-                logger.info("Streamed answer saved to database")
+                    # save complete answer after streaming
+                    save_message(
+                        st.session_state.current_session_id,
+                        "assistant",
+                        answer,
+                    )
+                    logger.info("Streamed answer saved to database")
 
             except Exception as e:
                 st.error("Something went wrong. Please try again.")
                 logger.error(f"Error streaming answer: {e}")
+
         st.rerun()

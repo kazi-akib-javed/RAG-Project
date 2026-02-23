@@ -21,17 +21,34 @@ def get_supabase_client() -> Client:
 
 # ── Session management ────────────────────────────────────────────
 
-def create_session(name: str) -> dict:
+def create_session(name: str, document_name: str = None) -> dict:
     """Create a new chat session"""
     try:
         client = get_supabase_client()
-        response = client.table("chat_sessions").insert({"name": name}).execute()
+        response = client.table("chat_sessions").insert({
+            "name": name,
+            "document_name": document_name
+        }).execute()
         session = response.data[0]
         logger.info(f"Created new session: {session['id']} — {name}")
         return session
 
     except Exception as e:
         logger.error(f"Failed to create session: {e}")
+        raise
+
+
+def update_session_document(session_id: str, document_name: str) -> None:
+    """Update the document associated with a session"""
+    try:
+        client = get_supabase_client()
+        client.table("chat_sessions").update(
+            {"document_name": document_name}
+        ).eq("id", session_id).execute()
+        logger.info(f"Updated session {session_id} document to: {document_name}")
+
+    except Exception as e:
+        logger.error(f"Failed to update session document: {e}")
         raise
 
 
