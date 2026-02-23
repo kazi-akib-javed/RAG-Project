@@ -21,3 +21,6 @@ FAISS_DB_PATH = "faiss_db"
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Memory
+CHAT_HISTORY_LIMIT = 6

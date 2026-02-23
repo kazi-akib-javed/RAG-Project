@@ -60,7 +60,7 @@ with st.sidebar:
 
     # upload document
     st.subheader("📁 Upload Document")
-    uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+    uploaded_file = st.file_uploader("Upload a PDF", type="pdf", accept_multiple_files=False, max_upload_size=10)
 
     if uploaded_file is not None:
         with st.spinner("Processing document..."):
@@ -143,8 +143,17 @@ else:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
+                    # get chat history before current question
+                    from src.generation.generator import build_chat_history
+                    all_messages = get_session_messages(
+                        st.session_state.current_session_id
+                    )
+                    # exclude the message we just saved
+                    previous_messages = all_messages[:-1]
+                    chat_history = build_chat_history(previous_messages)
+
                     chunks = retrieve_chunks(question)
-                    answer = generate_answer(question, chunks)
+                    answer = generate_answer(question, chunks, chat_history)
                     st.markdown(answer)
                     save_message(
                         st.session_state.current_session_id,
