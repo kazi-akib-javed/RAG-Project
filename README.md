@@ -109,8 +109,8 @@ rag-chatbot/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/rag-chatbot.git
-cd rag-chatbot
+git clone https://github.com/kazi-akib-javed/RAG-Project.git
+cd RAG-Project
 ```
 
 ### 2. Create virtual environment
