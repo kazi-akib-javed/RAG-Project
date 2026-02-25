@@ -133,3 +133,47 @@ def rename_session(session_id: str, new_name: str) -> None:
     except Exception as e:
         logger.error(f"Failed to rename session: {e}")
         raise
+
+# ── Session document management ─────────────────────────────────
+
+def add_session_document(session_id: str, document_name: str) -> dict:
+    """Add a document to a session"""
+    try:
+        client = get_supabase_client()
+        response = client.table("session_documents").insert({
+            "session_id": session_id,
+            "document_name": document_name,
+        }).execute()
+        logger.info(f"Added document '{document_name}' to session {session_id}")
+        return response.data[0]
+    except Exception as e:
+        logger.error(f"Failed to add session document: {e}")
+        raise
+
+
+def get_session_documents(session_id: str) -> list:
+    """Get all documents for a session"""
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("session_documents")
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at")
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        logger.error(f"Failed to get session documents: {e}")
+        raise
+
+
+def remove_session_document(document_id: str) -> None:
+    """Remove a document from a session"""
+    try:
+        client = get_supabase_client()
+        client.table("session_documents").delete().eq("id", document_id).execute()
+        logger.info(f"Removed document {document_id}")
+    except Exception as e:
+        logger.error(f"Failed to remove document: {e}")
+        raise

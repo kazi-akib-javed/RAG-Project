@@ -5,22 +5,22 @@ import shutil
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.ingestion.document_loader import load_pdf, load_all_pdfs
+from src.ingestion.document_loader import load_pdf
 from src.ingestion.text_splitter import split_documents
-from src.ingestion.vector_store import create_vector_store
-from src.retrieval.retriever import retrieve_chunks
+from src.ingestion.vector_store import add_to_vector_store, load_chunks
 from src.generation.generator import build_chat_history, generate_answer_stream
 from src.database.db import (
+    add_session_document,
     create_session,
     get_all_sessions,
     delete_session,
     save_message,
     get_session_messages,
     rename_session,
-    update_session_document,
+    remove_session_document,
+    get_session_documents,
 )
 from src.retrieval.hybrid_search import hybrid_search
-from src.ingestion.vector_store import load_chunks
 from src.retrieval.reranker import rerank_chunks
 
 load_dotenv()
@@ -30,16 +30,6 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
 
-
-def setup_vector_store():
-    """Ingest documents if vector store doesn't exist"""
-    if not os.path.exists("faiss_db"):
-        with st.spinner("Ingesting documents..."):
-            pages = load_all_pdfs("data")
-            chunks = split_documents(pages)
-            create_vector_store(chunks)
-
-
 # ── Session state defaults ─────────────────────────────────────────
 if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = None
@@ -47,8 +37,20 @@ if "current_session_id" not in st.session_state:
 if "current_session_name" not in st.session_state:
     st.session_state.current_session_name = None
 
-if "current_document" not in st.session_state:
-    st.session_state.current_document = None
+if "current_documents" not in st.session_state:
+    st.session_state.current_documents = []
+
+if "session_docs" not in st.session_state:
+    st.session_state.session_docs = []
+
+if "sessions_cache" not in st.session_state:
+    st.session_state.sessions_cache = get_all_sessions()
+
+if "messages_cache" not in st.session_state:
+    st.session_state.messages_cache = []
+
+if "processing_upload" not in st.session_state:
+    st.session_state.processing_upload = False
 
 # ── Sidebar ────────────────────────────────────────────────────────
 with st.sidebar:
@@ -60,53 +62,86 @@ with st.sidebar:
         session = create_session("New Chat")
         st.session_state.current_session_id = session["id"]
         st.session_state.current_session_name = session["name"]
+        st.session_state.session_docs = []
+        st.session_state.current_documents = []
+        st.session_state.messages_cache = []
+        st.session_state.sessions_cache = get_all_sessions()
         st.rerun()
 
     st.divider()
 
     # upload document
     st.subheader("📁 Upload Document")
-    uploaded_file = st.file_uploader("Upload a PDF", type="pdf", max_upload_size=10)  # limit to 10MB
+    uploaded_files = st.file_uploader(
+        "Add PDFs to this chat",
+        type="pdf",
+        accept_multiple_files=True
+    )
 
-    if st.session_state.current_document:
-        st.caption(f"📄 Active document: {st.session_state.current_document}")
-    else:
-        st.warning("⚠️ No document loaded for this chat")
+    # show documents in current session
+    if st.session_state.current_session_id:
+        docs = st.session_state.session_docs
+        if docs:
+            st.caption(f"📄 {len(docs)} document(s) in this chat:")
+            for doc in docs:
+                col1, col2 = st.columns([8, 2])
+                with col1:
+                    st.caption(f"• {doc['document_name']}")
+                with col2:
+                    if st.button("✕", key=f"remove_doc_{doc['id']}"):
+                        remove_session_document(doc["id"])
+                        st.session_state.session_docs = get_session_documents(
+                            st.session_state.current_session_id
+                        )
+                        st.session_state.current_documents = [
+                            d["document_name"] for d in st.session_state.session_docs
+                        ]
+                        st.rerun()
+        else:
+            st.warning("⚠️ No documents in this chat")
 
-    if uploaded_file is not None:
-        with st.spinner("Processing document..."):
-            if os.path.exists("faiss_db"):
-                shutil.rmtree("faiss_db")
-                logger.info("Old vector store cleared")
+    if uploaded_files and not st.session_state.get("processing_upload"):
+        if st.session_state.current_session_id is None:
+            st.warning("Please create a new chat first!")
+        else:
+            existing = [d["document_name"] for d in st.session_state.session_docs]
+            new_files = [f for f in uploaded_files if f.name not in existing]
 
-            save_path = os.path.join("data", uploaded_file.name)
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+            if new_files:
+                st.session_state.processing_upload = True
+                for uploaded_file in new_files:
+                    with st.spinner(f"Processing {uploaded_file.name}..."):
+                        save_path = os.path.join("data", uploaded_file.name)
+                        with open(save_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
 
-            pages = load_pdf(save_path)
-            chunks = split_documents(pages)
-            create_vector_store(chunks)
+                        pages = load_pdf(save_path)
+                        chunks = split_documents(pages)
+                        add_to_vector_store(chunks, st.session_state.current_session_id)
 
-            # save uploaded filename to session state
-            st.session_state.current_document = uploaded_file.name
+                        add_session_document(
+                            st.session_state.current_session_id,
+                            uploaded_file.name,
+                        )
+                        st.session_state.current_documents.append(uploaded_file.name)
 
-            # update session document if session exists
-            if st.session_state.current_session_id:
-                update_session_document(
-                    st.session_state.current_session_id,
-                    uploaded_file.name
+                    st.success(f"✅ {uploaded_file.name} added!")
+                    logger.info(f"Document added: {uploaded_file.name}")
+
+                st.session_state.session_docs = get_session_documents(
+                    st.session_state.current_session_id
                 )
-
-        st.success(f"✅ {uploaded_file.name} ready!")
-        logger.info(f"Document uploaded: {uploaded_file.name}")
+                st.session_state.processing_upload = False
+                st.rerun()
+            else:
+                for f in uploaded_files:
+                    st.warning(f"'{f.name}' already added!")
 
     st.divider()
 
     # chat history list
     st.subheader("💬 Chat History")
-    sessions = get_all_sessions()
-
-    for session in sessions:
+    for session in st.session_state.sessions_cache:
         col1, col2 = st.columns([8, 2])
 
         with col1:
@@ -117,16 +152,27 @@ with st.sidebar:
             ):
                 st.session_state.current_session_id = session["id"]
                 st.session_state.current_session_name = session["name"]
-                st.session_state.current_document = session.get("document_name")
+                docs = get_session_documents(session["id"])
+                st.session_state.session_docs = docs
+                st.session_state.current_documents = [
+                    d["document_name"] for d in docs
+                ]
+                st.session_state.messages_cache = get_session_messages(session["id"])
                 st.rerun()
 
         with col2:
             if st.button("🗑️", key=f"delete_{session['id']}"):
+                session_store_path = f"faiss_db/{session['id']}"
+                if os.path.exists(session_store_path):
+                    shutil.rmtree(session_store_path)
                 delete_session(session["id"])
                 if st.session_state.current_session_id == session["id"]:
                     st.session_state.current_session_id = None
                     st.session_state.current_session_name = None
-                    st.session_state.current_document = None
+                    st.session_state.current_documents = []
+                    st.session_state.session_docs = []
+                    st.session_state.messages_cache = []
+                st.session_state.sessions_cache = get_all_sessions()
                 st.rerun()
 
 
@@ -138,11 +184,8 @@ if st.session_state.current_session_id is None:
 else:
     st.title(f"💬 {st.session_state.current_session_name}")
 
-    setup_vector_store()
-
-    # load and display messages from database
-    messages = get_session_messages(st.session_state.current_session_id)
-    for message in messages:
+    # display messages from cache
+    for message in st.session_state.messages_cache:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
@@ -153,37 +196,37 @@ else:
         with st.chat_message("user"):
             st.markdown(question)
         save_message(st.session_state.current_session_id, "user", question)
+        st.session_state.messages_cache.append({
+            "role": "user",
+            "content": question
+        })
 
         # rename chat to first question if still default
         if st.session_state.current_session_name == "New Chat":
-            # truncate to 40 chars if question is too long
             new_name = question[:40] + "..." if len(question) > 40 else question
             rename_session(st.session_state.current_session_id, new_name)
             st.session_state.current_session_name = new_name
+            st.session_state.sessions_cache = get_all_sessions()
             logger.info(f"Session renamed to: {new_name}")
 
         # generate and save answer
         with st.chat_message("assistant"):
             try:
-                all_messages = get_session_messages(
-                    st.session_state.current_session_id
-                )
-                previous_messages = all_messages[:-1]
+                # build chat history from cache excluding current message
+                previous_messages = st.session_state.messages_cache[:-1]
                 chat_history = build_chat_history(previous_messages)
 
-                # check if document exists
-                if not st.session_state.current_document:
+                if not st.session_state.current_documents:
                     st.warning("Please upload a document first!")
                 else:
-                    all_chunks = load_chunks()
+                    all_chunks = load_chunks(st.session_state.current_session_id)
                     chunks = hybrid_search(question, all_chunks)
+                    chunks = rerank_chunks(question, chunks)
 
-                    # stream the response
                     answer = st.write_stream(
                         generate_answer_stream(question, chunks, chat_history)
                     )
 
-                    # display source chunks
                     with st.expander("📄 View Sources"):
                         for i, chunk in enumerate(chunks):
                             st.markdown(f"**Source {i+1}**")
@@ -194,16 +237,17 @@ else:
                             st.info(chunk.page_content[:300] + "...")
                             st.divider()
 
-                    # save complete answer after streaming
                     save_message(
                         st.session_state.current_session_id,
                         "assistant",
                         answer,
                     )
-                    logger.info("Streamed answer saved to database")
+                    st.session_state.messages_cache.append({
+                        "role": "assistant",
+                        "content": answer
+                    })
+                    logger.info("Answer saved to database")
 
             except Exception as e:
                 st.error("Something went wrong. Please try again.")
-                logger.error(f"Error streaming answer: {e}")
-
-        st.rerun()
+                logger.error(f"Error generating answer: {e}")
