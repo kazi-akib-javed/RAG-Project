@@ -253,7 +253,7 @@ pytest tests/ -v
 
 ## 🔮 Future Improvements
 
-- [ ] Add re-ranking with a cross-encoder model
+- [x] Add re-ranking with a cross-encoder model
 - [ ] Support multiple documents per session
 - [ ] Add OCR for scanned PDFs
 - [ ] Replace FAISS with Pinecone for scalability
