@@ -276,8 +276,8 @@ pytest tests/ -v
 
 - [x] Add re-ranking with a cross-encoder model
 - [x] Support multiple documents per session
-- [ ] Agentic RAG with LangGraph — let LLM decide when to retrieve
-- [ ] Corrective RAG (CRAG) — re-query if retrieved chunks are not relevant enough
+- [x] Agentic RAG with LangGraph — let LLM decide when to retrieve
+- [x] Corrective RAG (CRAG) — re-query if retrieved chunks are not relevant enough
 - [ ] Add OCR for scanned PDFs
 - [ ] FastAPI backend + React frontend
 - [ ] Redis query caching for repeated questions
