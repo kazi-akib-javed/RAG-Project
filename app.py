@@ -21,6 +21,7 @@ from src.database.db import (
 )
 from src.retrieval.hybrid_search import hybrid_search
 from src.ingestion.vector_store import load_chunks
+from src.retrieval.reranker import rerank_chunks
 
 load_dotenv()
 

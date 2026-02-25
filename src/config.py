@@ -24,3 +24,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Memory
 CHAT_HISTORY_LIMIT = 6
+
+# Reranker
+RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
