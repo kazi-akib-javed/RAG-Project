@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 from src.ingestion.document_loader import load_pdf
 from src.ingestion.text_splitter import split_documents
-from src.ingestion.vector_store import add_to_vector_store, load_chunks
-from src.generation.generator import build_chat_history, generate_answer_stream
+from src.ingestion.vector_store import add_to_vector_store
+from src.generation.generator import build_chat_history
 from src.database.db import (
     add_session_document,
     create_session,
@@ -20,8 +20,8 @@ from src.database.db import (
     remove_session_document,
     get_session_documents,
 )
-from src.retrieval.hybrid_search import hybrid_search
-from src.retrieval.reranker import rerank_chunks
+from src.agent.graph import rag_graph
+from src.agent.state import AgentState
 
 load_dotenv()
 
@@ -212,30 +212,42 @@ else:
         # generate and save answer
         with st.chat_message("assistant"):
             try:
-                # build chat history from cache excluding current message
+                # build chat history from cache
                 previous_messages = st.session_state.messages_cache[:-1]
                 chat_history = build_chat_history(previous_messages)
 
                 if not st.session_state.current_documents:
                     st.warning("Please upload a document first!")
                 else:
-                    all_chunks = load_chunks(st.session_state.current_session_id)
-                    chunks = hybrid_search(question, all_chunks)
-                    chunks = rerank_chunks(question, chunks)
+                    with st.spinner("Thinking..."):
+                        # run agentic RAG graph
+                        result = rag_graph.invoke(AgentState(
+                            question=question,
+                            chat_history=chat_history,
+                            documents=[],
+                            answer="",
+                            needs_retrieval=False,
+                            documents_relevant=False,
+                            rewrite_count=0,
+                            session_id=st.session_state.current_session_id,
+                        ))
 
-                    answer = st.write_stream(
-                        generate_answer_stream(question, chunks, chat_history)
-                    )
+                    answer = result["answer"]
+                    st.markdown(answer)
 
-                    with st.expander("📄 View Sources"):
-                        for i, chunk in enumerate(chunks):
-                            st.markdown(f"**Source {i+1}**")
-                            st.caption(
-                                f"📁 {chunk.metadata.get('source', 'Unknown')} "
-                                f"| Page {chunk.metadata.get('page', '?') + 1}"
-                            )
-                            st.info(chunk.page_content[:300] + "...")
-                            st.divider()
+                    # show source citations if retrieval was used
+                    if result["needs_retrieval"] and result["documents"]:
+                        with st.expander("📄 View Sources"):
+                            for i, chunk in enumerate(result["documents"]):
+                                st.markdown(f"**Source {i+1}**")
+                                st.caption(
+                                    f"📁 {chunk.metadata.get('source', 'Unknown')} "
+                                    f"| Page {chunk.metadata.get('page', '?') + 1}"
+                                )
+                                st.info(chunk.page_content[:300] + "...")
+                                st.divider()
+                    elif not result["needs_retrieval"]:
+                        st.caption("💭 Answered from conversation memory")
 
                     save_message(
                         st.session_state.current_session_id,
@@ -246,8 +258,8 @@ else:
                         "role": "assistant",
                         "content": answer
                     })
-                    logger.info("Answer saved to database")
+                    logger.info("Agent answer saved to database")
 
             except Exception as e:
                 st.error("Something went wrong. Please try again.")
-                logger.error(f"Error generating answer: {e}")
+                logger.error(f"Error running agent: {e}")
