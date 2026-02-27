@@ -5,8 +5,7 @@ load_dotenv()
 
 # LLM
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-LLM_MODEL = "llama-3.1-8b-instant"
-# LLM_MODEL = "llama-3.3-70b-versatile" # Uncomment to use larger model (requires more resources, may be slower)
+LLM_MODEL = "llama-3.3-70b-versatile"
 
 # Embeddings
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -28,3 +27,22 @@ CHAT_HISTORY_LIMIT = 6
 
 # Reranker
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+
+# Validation
+def validate_config():
+    """Raise early if required env vars are missing"""
+    missing = []
+    if not GROQ_API_KEY:
+        missing.append("GROQ_API_KEY")
+    if not SUPABASE_URL:
+        missing.append("SUPABASE_URL")
+    if not SUPABASE_KEY:
+        missing.append("SUPABASE_KEY")
+    if missing:
+        raise EnvironmentError(
+            f"Missing required environment variables: {', '.join(missing)}\n"
+            f"Copy .env.example to .env and fill in the values."
+        )
+
+
+validate_config()

@@ -1,20 +1,17 @@
 import logging
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_groq import ChatGroq
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 
 from src.agent.state import AgentState
+
 from src.ingestion.vector_store import load_chunks
 from src.retrieval.hybrid_search import hybrid_search
 from src.retrieval.reranker import rerank_chunks
-from src.config import GROQ_API_KEY, LLM_MODEL
+
+from src.generation.generator import get_llm  # import instead of redefining
 
 logger = logging.getLogger(__name__)
-
-
-def get_llm():
-    return ChatGroq(model=LLM_MODEL, api_key=GROQ_API_KEY)
 
 
 # ── Node 1: Check if retrieval is needed ─────────────────────────
@@ -65,16 +62,20 @@ def retrieve(state: AgentState) -> AgentState:
     """Retrieve relevant chunks using hybrid search + reranking"""
     logger.info(f"Retrieving documents for: {state['question']}")
 
+    if not state.get("session_id"):
+        logger.error("No session_id in state")
+        return {**state, "documents": []}
+
     try:
+        from src.retrieval.strategy import RetrieverContext
         all_chunks = load_chunks(state["session_id"])
-        chunks = hybrid_search(state["question"], all_chunks)
-        chunks = rerank_chunks(state["question"], chunks)
+        retriever = RetrieverContext()  # uses HybridWithRerankingStrategy by default
+        chunks = retriever.retrieve(state["question"], all_chunks)
         logger.info(f"Retrieved {len(chunks)} chunks")
         return {**state, "documents": chunks}
     except Exception as e:
         logger.error(f"Retrieval failed: {e}")
         return {**state, "documents": []}
-
 
 # ── Node 3: Grade documents ───────────────────────────────────────
 def grade_documents(state: AgentState) -> AgentState:
@@ -108,36 +109,6 @@ Answer with ONLY "YES" or "NO".
 
     relevant = "NO" not in result.upper()
     logger.info(f"Grading result: '{result.strip()}' — relevant: {relevant}")
-    return {**state, "documents_relevant": relevant}
-    """Check if retrieved documents are actually relevant"""
-    logger.info("Grading document relevance")
-
-    question = state["question"]
-    documents = state["documents"]
-
-    if not documents:
-        logger.warning("No documents to grade")
-        return {**state, "documents_relevant": False}
-
-    llm = get_llm()
-    prompt = ChatPromptTemplate.from_template("""
-You are grading whether retrieved documents are relevant to answer a question.
-
-Question: {question}
-
-Retrieved content:
-{context}
-
-Are these documents relevant to answer the question?
-Answer with ONLY "YES" or "NO".
-""")
-
-    context = "\n\n".join([doc.page_content[:300] for doc in documents])
-    chain = prompt | llm | StrOutputParser()
-    result = chain.invoke({"question": question, "context": context})
-
-    relevant = "YES" in result.upper()
-    logger.info(f"Documents relevant: {relevant}")
     return {**state, "documents_relevant": relevant}
 
 
@@ -174,9 +145,14 @@ def generate(state: AgentState) -> AgentState:
 
     llm = get_llm()
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a helpful assistant. Answer the question based only on the context below.
-If you don't know the answer from the context, say "I don't know".
-If the user refers to something from chat history, use that to understand their question.
+        ("system", """You are a precise document assistant.
+RULES:
+- Answer ONLY using exact information from the context below
+- NEVER invent or estimate numbers, percentages, or values
+- If the exact answer is not in the context, say: "I could not find this in the document"
+- Quote specific values directly from the context when possible
+- Do not mix up values from different parts of the context
+- If the user refers to something from chat history, use that to understand their question
 
 Context:
 {context}"""),
