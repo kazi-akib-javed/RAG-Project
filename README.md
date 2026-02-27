@@ -313,6 +313,12 @@ Bi-encoder similarity search (FAISS) is fast but imprecise — it scores query a
 **Why Last-N memory over full history?**
 Llama 3.1 8B has an 8192 token context window. Passing full history risks hitting the limit. Last 6 messages gives enough context for natural conversation without token overflow.
 
+**Design Patterns Applied**
+- **Singleton** — embedding model loads once and is reused across all requests, avoiding redundant model loading
+- **Factory** — `LLMFactory.create(provider)` makes it trivial to swap Groq for OpenAI or any other provider
+- **Repository** — Supabase operations are abstracted behind interfaces, making it easy to swap databases
+- **Strategy** — retrieval strategies (semantic, hybrid, hybrid+reranking) are interchangeable at runtime
+
 ---
 
 ## 🤝 Contributing
