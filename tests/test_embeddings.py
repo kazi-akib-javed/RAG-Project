@@ -14,10 +14,13 @@ def test_get_embedding_model_success():
 
 def test_get_embedding_model_failure():
     """Should raise exception if model fails to load"""
+    from src.ingestion.embeddings import EmbeddingModelSingleton
+    EmbeddingModelSingleton.reset()
     with patch("src.ingestion.embeddings.HuggingFaceEmbeddings") as mock:
         mock.side_effect = Exception("Model not found")
         with pytest.raises(Exception):
             get_embedding_model()
+    EmbeddingModelSingleton.reset()
 
 
 def test_embed_text_returns_vector():
